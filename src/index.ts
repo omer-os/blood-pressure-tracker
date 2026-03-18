@@ -81,7 +81,7 @@ app.get("/bp", (_req, res) => {
 
 app.get("/analytics", async (_req, res) => {
   const readings = await db.bloodPressure.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "asc" },
   });
 
   const avg = readings.length
@@ -92,7 +92,43 @@ app.get("/analytics", async (_req, res) => {
     }
     : { systolic: 0, diastolic: 0, pulse: 0 };
 
-  const chartData = [...readings].reverse().map((r) => ({
+  const sColor = avg.systolic > 140 ? "text-red-400" : avg.systolic > 120 ? "text-yellow-400" : "text-green-400";
+  const dColor = avg.diastolic > 90 ? "text-red-400" : avg.diastolic > 80 ? "text-yellow-400" : "text-green-400";
+
+  // Group readings by day
+  const days: Record<string, typeof readings> = {};
+  readings.forEach((r) => {
+    const key = new Date(r.createdAt).toLocaleDateString("ar-IQ", { weekday: "long", day: "numeric", month: "long" });
+    if (!days[key]) days[key] = [];
+    days[key].push(r);
+  });
+
+  const dayRows = Object.entries(days)
+    .reverse()
+    .map(([day, rds]) => {
+      const cells = rds
+        .map((r) => {
+          const time = new Date(r.createdAt).toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
+          const s = r.systolic;
+          const d = r.diastolic;
+          const color = s > 140 || d > 90 ? "text-red-400" : s > 120 || d > 80 ? "text-yellow-400" : "text-green-400";
+          return `<div class="flex flex-col items-center gap-0.5" id="cell-${r.id}">
+            <span class="text-xs text-slate-500">${time}</span>
+            <span class="font-mono font-bold text-lg ${color}">${s}/${d}</span>
+            ${r.pulse ? `<span class="text-xs text-slate-500">♥ ${r.pulse}</span>` : ""}
+            <button onclick="del('${r.id}')" class="delete-col hidden text-[10px] text-red-400 hover:text-red-300 mt-0.5">حذف</button>
+          </div>`;
+        })
+        .join("");
+
+      return `<div class="border-b border-slate-700/50 py-3 px-4">
+        <div class="text-sm text-slate-400 mb-2">${day}</div>
+        <div class="flex gap-6 flex-wrap">${cells}</div>
+      </div>`;
+    })
+    .join("");
+
+  const chartData = readings.map((r) => ({
     label:
       new Date(r.createdAt).toLocaleDateString("ar-IQ", { day: "numeric", month: "numeric" }) +
       " " +
@@ -101,27 +137,6 @@ app.get("/analytics", async (_req, res) => {
     diastolic: r.diastolic,
     pulse: r.pulse,
   }));
-
-  const rows = readings
-    .map((r) => {
-      const d = new Date(r.createdAt);
-      const date = d.toLocaleDateString("ar-IQ", { weekday: "short", day: "numeric", month: "numeric" });
-      const time = d.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
-      return `<tr class="border-b border-slate-700/50 text-center" id="row-${r.id}">
-        <td class="py-2.5 px-2 text-right text-sm">${date}</td>
-        <td class="py-2.5 px-2 text-sm text-slate-400">${time}</td>
-        <td class="py-2.5 px-2 font-mono font-semibold">${r.systolic}</td>
-        <td class="py-2.5 px-2 font-mono font-semibold">${r.diastolic}</td>
-        <td class="py-2.5 px-2 font-mono font-semibold text-slate-400">${r.pulse ?? "—"}</td>
-        <td class="py-2.5 px-1 delete-col hidden">
-          <button onclick="del('${r.id}')" class="text-red-400 hover:text-red-300 text-lg leading-none">×</button>
-        </td>
-      </tr>`;
-    })
-    .join("");
-
-  const sColor = avg.systolic > 140 ? "text-red-400" : avg.systolic > 120 ? "text-yellow-400" : "text-green-400";
-  const dColor = avg.diastolic > 90 ? "text-red-400" : avg.diastolic > 80 ? "text-yellow-400" : "text-green-400";
 
   res.send(`
     <!DOCTYPE html>
@@ -134,59 +149,35 @@ app.get("/analytics", async (_req, res) => {
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
     <body class="bg-slate-950 text-slate-200 font-sans min-h-screen">
-      <div class="max-w-2xl mx-auto px-4 py-6">
+      <div class="max-w-md mx-auto px-4 py-6">
 
         <div class="flex items-center justify-between mb-4">
-          <h1 class="text-lg font-bold">🩺 تقرير ضغط الدم</h1>
+          <h1 class="text-lg font-bold">🩺 ضغط الدم</h1>
           <div class="relative">
             <button onclick="document.getElementById('menu').classList.toggle('hidden')"
               class="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-lg transition">⋮</button>
             <div id="menu" class="hidden absolute left-0 top-11 bg-slate-800 border border-slate-700 rounded-xl p-4 w-56 z-50 shadow-xl space-y-3">
               <div class="text-xs text-slate-400">المعدلات</div>
-              <div class="flex justify-between text-sm">
-                <span>الانقباضي</span>
-                <span class="font-mono font-bold ${sColor}">${avg.systolic}</span>
-              </div>
-              <div class="flex justify-between text-sm">
-                <span>الانبساطي</span>
-                <span class="font-mono font-bold ${dColor}">${avg.diastolic}</span>
-              </div>
-              <div class="flex justify-between text-sm">
-                <span>النبض</span>
-                <span class="font-mono font-bold">${avg.pulse}</span>
-              </div>
-              <div class="flex justify-between text-sm">
-                <span>عدد القراءات</span>
-                <span class="font-mono font-bold">${readings.length}</span>
-              </div>
+              <div class="flex justify-between text-sm"><span>الانقباضي</span><span class="font-mono font-bold ${sColor}">${avg.systolic}</span></div>
+              <div class="flex justify-between text-sm"><span>الانبساطي</span><span class="font-mono font-bold ${dColor}">${avg.diastolic}</span></div>
+              <div class="flex justify-between text-sm"><span>النبض</span><span class="font-mono font-bold">${avg.pulse}</span></div>
+              <div class="flex justify-between text-sm"><span>القراءات</span><span class="font-mono font-bold">${readings.length}</span></div>
               <hr class="border-slate-700">
-              <button onclick="toggleDelete()" class="w-full text-sm text-center py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition" id="editBtn">🗑️ تعديل القراءات</button>
+              <button onclick="toggleDelete()" class="w-full text-sm text-center py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition" id="editBtn">🗑️ تعديل</button>
               <button onclick="window.print()" class="w-full text-sm text-center py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 transition">🖨️ طباعة</button>
               <a href="/bp" class="block text-sm text-center py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition">+ قراءة جديدة</a>
             </div>
           </div>
         </div>
 
+        <!-- Daily readings -->
         <div class="bg-slate-800 rounded-xl overflow-hidden mb-6">
-          <table class="w-full">
-            <thead>
-              <tr class="border-b border-slate-700 text-slate-400 text-xs">
-                <th class="py-2.5 px-2 text-right font-medium">التاريخ</th>
-                <th class="py-2.5 px-2 font-medium">الوقت</th>
-                <th class="py-2.5 px-2 font-medium">الانقباضي</th>
-                <th class="py-2.5 px-2 font-medium">الانبساطي</th>
-                <th class="py-2.5 px-2 font-medium">النبض</th>
-                <th class="py-2.5 px-1 delete-col hidden"></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows || '<tr><td colspan="5" class="py-6 text-center text-slate-500 text-sm">لا توجد قراءات</td></tr>'}
-            </tbody>
-          </table>
+          ${dayRows || '<div class="py-8 text-center text-slate-500 text-sm">لا توجد قراءات</div>'}
         </div>
 
+        <!-- Chart -->
         <div class="bg-slate-800 rounded-xl p-4">
-          <canvas id="chart" height="200"></canvas>
+          <canvas id="chart" height="180"></canvas>
         </div>
 
       </div>
@@ -200,16 +191,14 @@ app.get("/analytics", async (_req, res) => {
         function toggleDelete() {
           editing = !editing;
           document.querySelectorAll('.delete-col').forEach(el => el.classList.toggle('hidden', !editing));
-          document.getElementById('editBtn').textContent = editing ? '✓ تم' : '🗑️ تعديل القراءات';
+          document.getElementById('editBtn').textContent = editing ? '✓ تم' : '🗑️ تعديل';
           document.getElementById('menu').classList.add('hidden');
         }
 
         async function del(id) {
-          if (!confirm('حذف هذه القراءة؟')) return;
+          if (!confirm('حذف؟')) return;
           const res = await fetch('/bp/' + id, { method: 'DELETE' });
-          if (res.ok) {
-            document.getElementById('row-' + id).remove();
-          }
+          if (res.ok) document.getElementById('cell-' + id).remove();
         }
 
         const data = ${JSON.stringify(chartData)};
@@ -224,34 +213,24 @@ app.get("/analytics", async (_req, res) => {
                   data: data.map(d => d.systolic),
                   borderColor: '#f87171',
                   backgroundColor: 'rgba(248,113,113,0.08)',
-                  fill: true,
-                  tension: 0.35,
-                  pointRadius: 5,
-                  pointBackgroundColor: '#f87171',
-                  borderWidth: 2,
+                  fill: true, tension: 0.35, pointRadius: 4,
+                  pointBackgroundColor: '#f87171', borderWidth: 2,
                 },
                 {
                   label: 'الانبساطي',
                   data: data.map(d => d.diastolic),
                   borderColor: '#60a5fa',
                   backgroundColor: 'rgba(96,165,250,0.08)',
-                  fill: true,
-                  tension: 0.35,
-                  pointRadius: 5,
-                  pointBackgroundColor: '#60a5fa',
-                  borderWidth: 2,
+                  fill: true, tension: 0.35, pointRadius: 4,
+                  pointBackgroundColor: '#60a5fa', borderWidth: 2,
                 },
                 {
                   label: 'النبض',
                   data: data.map(d => d.pulse),
                   borderColor: '#a78bfa',
-                  backgroundColor: 'rgba(167,139,250,0.08)',
-                  fill: false,
-                  tension: 0.35,
-                  pointRadius: 4,
-                  pointBackgroundColor: '#a78bfa',
-                  borderWidth: 2,
-                  borderDash: [5, 5],
+                  fill: false, tension: 0.35, pointRadius: 3,
+                  pointBackgroundColor: '#a78bfa', borderWidth: 1.5,
+                  borderDash: [4, 4],
                 }
               ]
             },
@@ -259,18 +238,11 @@ app.get("/analytics", async (_req, res) => {
               responsive: true,
               interaction: { intersect: false, mode: 'index' },
               plugins: {
-                legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
-                tooltip: {
-                  backgroundColor: '#1e293b',
-                  titleColor: '#e2e8f0',
-                  bodyColor: '#94a3b8',
-                  borderColor: '#334155',
-                  borderWidth: 1,
-                  rtl: true,
-                }
+                legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+                tooltip: { backgroundColor: '#1e293b', titleColor: '#e2e8f0', bodyColor: '#94a3b8', borderColor: '#334155', borderWidth: 1, rtl: true }
               },
               scales: {
-                x: { ticks: { color: '#64748b', maxRotation: 45, font: { size: 10 } }, grid: { color: '#1e293b' } },
+                x: { ticks: { color: '#64748b', maxRotation: 45, font: { size: 9 } }, grid: { color: '#1e293b' } },
                 y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, suggestedMin: 50, suggestedMax: 180 }
               }
             }
@@ -299,14 +271,16 @@ app.delete("/bp/:id", async (req, res) => {
 });
 
 cron.schedule("0 9,17,21 * * *", () => {
+  const now = new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
   sendTelegramMessage(
-    `🩺 <b>تذكير ضغط الدم</b>\n\nوقت تسجيل ضغط الدم!\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>\n📊 <a href="${process.env.APP_URL}/analytics">التقرير</a>`
+    `🩺 <b>تذكير ضغط الدم</b>\n🕐 ${now}\n\nوقت تسجيل ضغط الدم!\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>\n📊 <a href="${process.env.APP_URL}/analytics">التقرير</a>`
   );
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  const now = new Date().toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
   sendTelegramMessage(
-    `✅ <b>السيرفر شغال</b>\n\nتطبيق ضغط الدم جاهز.\nالتنبيهات: 9 صباحاً، 5 عصراً، 9 مساءً\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>\n📊 <a href="${process.env.APP_URL}/analytics">التقرير</a>`
+    `✅ <b>السيرفر شغال</b>\n🕐 ${now}\n\nتطبيق ضغط الدم جاهز.\nالتنبيهات: 9 صباحاً، 5 عصراً، 9 مساءً\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>\n📊 <a href="${process.env.APP_URL}/analytics">التقرير</a>`
   );
 });
