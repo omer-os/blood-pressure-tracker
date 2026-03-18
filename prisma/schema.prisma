@@ -10,5 +10,6 @@ model BloodPressure {
   id        String   @id @default(cuid())
   systolic  Int
   diastolic Int
+  pulse     Int?
   createdAt DateTime @default(now())
 }

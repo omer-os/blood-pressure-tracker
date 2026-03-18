@@ -44,6 +44,9 @@ app.get("/bp", (_req, res) => {
           class="w-full p-3 rounded-lg border border-slate-600 bg-slate-900 text-slate-200 text-xl text-center mb-4 outline-none focus:border-blue-500 transition" dir="ltr">
         <label class="block text-sm text-slate-400 mb-1">الانبساطي (الواطي)</label>
         <input type="number" id="diastolic" placeholder="80" inputmode="numeric"
+          class="w-full p-3 rounded-lg border border-slate-600 bg-slate-900 text-slate-200 text-xl text-center mb-4 outline-none focus:border-blue-500 transition" dir="ltr">
+        <label class="block text-sm text-slate-400 mb-1">النبض</label>
+        <input type="number" id="pulse" placeholder="72" inputmode="numeric"
           class="w-full p-3 rounded-lg border border-slate-600 bg-slate-900 text-slate-200 text-xl text-center mb-6 outline-none focus:border-blue-500 transition" dir="ltr">
         <button onclick="submit()"
           class="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition active:scale-95">
@@ -55,16 +58,18 @@ app.get("/bp", (_req, res) => {
         async function submit() {
           const systolic = document.getElementById('systolic').value;
           const diastolic = document.getElementById('diastolic').value;
+          const pulse = document.getElementById('pulse').value;
           if (!systolic || !diastolic) return;
           const res = await fetch('/bp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ systolic: +systolic, diastolic: +diastolic })
+            body: JSON.stringify({ systolic: +systolic, diastolic: +diastolic, pulse: pulse ? +pulse : null })
           });
           if (res.ok) {
             document.getElementById('msg').classList.remove('hidden');
             document.getElementById('systolic').value = '';
             document.getElementById('diastolic').value = '';
+            document.getElementById('pulse').value = '';
             setTimeout(() => document.getElementById('msg').classList.add('hidden'), 3000);
           }
         }
@@ -83,8 +88,9 @@ app.get("/analytics", async (_req, res) => {
     ? {
       systolic: Math.round(readings.reduce((s, r) => s + r.systolic, 0) / readings.length),
       diastolic: Math.round(readings.reduce((s, r) => s + r.diastolic, 0) / readings.length),
+      pulse: Math.round(readings.filter((r) => r.pulse).reduce((s, r) => s + (r.pulse || 0), 0) / (readings.filter((r) => r.pulse).length || 1)),
     }
-    : { systolic: 0, diastolic: 0 };
+    : { systolic: 0, diastolic: 0, pulse: 0 };
 
   const chartData = [...readings].reverse().map((r) => ({
     label:
@@ -93,6 +99,7 @@ app.get("/analytics", async (_req, res) => {
       new Date(r.createdAt).toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }),
     systolic: r.systolic,
     diastolic: r.diastolic,
+    pulse: r.pulse,
   }));
 
   const rows = readings
@@ -101,10 +108,11 @@ app.get("/analytics", async (_req, res) => {
       const date = d.toLocaleDateString("ar-IQ", { weekday: "short", day: "numeric", month: "numeric" });
       const time = d.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
       return `<tr class="border-b border-slate-700/50 text-center">
-        <td class="py-2.5 px-3 text-right text-sm">${date}</td>
-        <td class="py-2.5 px-3 text-sm text-slate-400">${time}</td>
-        <td class="py-2.5 px-3 font-mono font-semibold">${r.systolic}</td>
-        <td class="py-2.5 px-3 font-mono font-semibold">${r.diastolic}</td>
+        <td class="py-2.5 px-2 text-right text-sm">${date}</td>
+        <td class="py-2.5 px-2 text-sm text-slate-400">${time}</td>
+        <td class="py-2.5 px-2 font-mono font-semibold">${r.systolic}</td>
+        <td class="py-2.5 px-2 font-mono font-semibold">${r.diastolic}</td>
+        <td class="py-2.5 px-2 font-mono font-semibold text-slate-400">${r.pulse ?? "—"}</td>
       </tr>`;
     })
     .join("");
@@ -125,7 +133,6 @@ app.get("/analytics", async (_req, res) => {
     <body class="bg-slate-950 text-slate-200 font-sans min-h-screen">
       <div class="max-w-2xl mx-auto px-4 py-6">
 
-        <!-- Header -->
         <div class="flex items-center justify-between mb-4">
           <h1 class="text-lg font-bold">🩺 تقرير ضغط الدم</h1>
           <div class="relative">
@@ -140,6 +147,10 @@ app.get("/analytics", async (_req, res) => {
               <div class="flex justify-between text-sm">
                 <span>الانبساطي</span>
                 <span class="font-mono font-bold ${dColor}">${avg.diastolic}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span>النبض</span>
+                <span class="font-mono font-bold">${avg.pulse}</span>
               </div>
               <div class="flex justify-between text-sm">
                 <span>عدد القراءات</span>
@@ -159,35 +170,32 @@ app.get("/analytics", async (_req, res) => {
           </div>
         </div>
 
-        <!-- Table -->
         <div class="bg-slate-800 rounded-xl overflow-hidden mb-6">
           <table class="w-full">
             <thead>
               <tr class="border-b border-slate-700 text-slate-400 text-xs">
-                <th class="py-2.5 px-3 text-right font-medium">التاريخ</th>
-                <th class="py-2.5 px-3 font-medium">الوقت</th>
-                <th class="py-2.5 px-3 font-medium">الانقباضي</th>
-                <th class="py-2.5 px-3 font-medium">الانبساطي</th>
+                <th class="py-2.5 px-2 text-right font-medium">التاريخ</th>
+                <th class="py-2.5 px-2 font-medium">الوقت</th>
+                <th class="py-2.5 px-2 font-medium">الانقباضي</th>
+                <th class="py-2.5 px-2 font-medium">الانبساطي</th>
+                <th class="py-2.5 px-2 font-medium">النبض</th>
               </tr>
             </thead>
             <tbody>
-              ${rows || '<tr><td colspan="4" class="py-6 text-center text-slate-500 text-sm">لا توجد قراءات</td></tr>'}
+              ${rows || '<tr><td colspan="5" class="py-6 text-center text-slate-500 text-sm">لا توجد قراءات</td></tr>'}
             </tbody>
           </table>
         </div>
 
-        <!-- Chart -->
         <div class="bg-slate-800 rounded-xl p-4">
           <canvas id="chart" height="200"></canvas>
         </div>
 
       </div>
 
-      <!-- Close menu on outside click -->
       <script>
         document.addEventListener('click', (e) => {
-          const menu = document.getElementById('menu');
-          if (!e.target.closest('.relative')) menu.classList.add('hidden');
+          if (!e.target.closest('.relative')) document.getElementById('menu').classList.add('hidden');
         });
 
         const data = ${JSON.stringify(chartData)};
@@ -218,6 +226,18 @@ app.get("/analytics", async (_req, res) => {
                   pointRadius: 5,
                   pointBackgroundColor: '#60a5fa',
                   borderWidth: 2,
+                },
+                {
+                  label: 'النبض',
+                  data: data.map(d => d.pulse),
+                  borderColor: '#a78bfa',
+                  backgroundColor: 'rgba(167,139,250,0.08)',
+                  fill: false,
+                  tension: 0.35,
+                  pointRadius: 4,
+                  pointBackgroundColor: '#a78bfa',
+                  borderWidth: 2,
+                  borderDash: [5, 5],
                 }
               ]
             },
@@ -237,7 +257,7 @@ app.get("/analytics", async (_req, res) => {
               },
               scales: {
                 x: { ticks: { color: '#64748b', maxRotation: 45, font: { size: 10 } }, grid: { color: '#1e293b' } },
-                y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, suggestedMin: 60, suggestedMax: 180 }
+                y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, suggestedMin: 50, suggestedMax: 180 }
               }
             }
           });
@@ -249,11 +269,11 @@ app.get("/analytics", async (_req, res) => {
 });
 
 app.post("/bp", async (req, res) => {
-  const { systolic, diastolic } = req.body;
+  const { systolic, diastolic, pulse } = req.body;
   if (!systolic || !diastolic) return res.status(400).json({ error: "Missing fields" });
 
   const record = await db.bloodPressure.create({
-    data: { systolic, diastolic },
+    data: { systolic, diastolic, pulse: pulse || null },
   });
 
   res.json(record);
