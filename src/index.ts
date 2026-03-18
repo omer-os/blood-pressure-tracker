@@ -107,12 +107,15 @@ app.get("/analytics", async (_req, res) => {
       const d = new Date(r.createdAt);
       const date = d.toLocaleDateString("ar-IQ", { weekday: "short", day: "numeric", month: "numeric" });
       const time = d.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
-      return `<tr class="border-b border-slate-700/50 text-center">
+      return `<tr class="border-b border-slate-700/50 text-center" id="row-${r.id}">
         <td class="py-2.5 px-2 text-right text-sm">${date}</td>
         <td class="py-2.5 px-2 text-sm text-slate-400">${time}</td>
         <td class="py-2.5 px-2 font-mono font-semibold">${r.systolic}</td>
         <td class="py-2.5 px-2 font-mono font-semibold">${r.diastolic}</td>
         <td class="py-2.5 px-2 font-mono font-semibold text-slate-400">${r.pulse ?? "—"}</td>
+        <td class="py-2.5 px-1 delete-col hidden">
+          <button onclick="del('${r.id}')" class="text-red-400 hover:text-red-300 text-lg leading-none">×</button>
+        </td>
       </tr>`;
     })
     .join("");
@@ -157,13 +160,7 @@ app.get("/analytics", async (_req, res) => {
                 <span class="font-mono font-bold">${readings.length}</span>
               </div>
               <hr class="border-slate-700">
-              <div class="text-xs text-slate-400">الألوان</div>
-              <div class="text-xs space-y-1">
-                <div>🟢 طبيعي &lt;120/80</div>
-                <div>🟡 مرتفع 120-140</div>
-                <div>🔴 عالي &gt;140/90</div>
-              </div>
-              <hr class="border-slate-700">
+              <button onclick="toggleDelete()" class="w-full text-sm text-center py-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition" id="editBtn">🗑️ تعديل القراءات</button>
               <button onclick="window.print()" class="w-full text-sm text-center py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 transition">🖨️ طباعة</button>
               <a href="/bp" class="block text-sm text-center py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition">+ قراءة جديدة</a>
             </div>
@@ -179,6 +176,7 @@ app.get("/analytics", async (_req, res) => {
                 <th class="py-2.5 px-2 font-medium">الانقباضي</th>
                 <th class="py-2.5 px-2 font-medium">الانبساطي</th>
                 <th class="py-2.5 px-2 font-medium">النبض</th>
+                <th class="py-2.5 px-1 delete-col hidden"></th>
               </tr>
             </thead>
             <tbody>
@@ -197,6 +195,22 @@ app.get("/analytics", async (_req, res) => {
         document.addEventListener('click', (e) => {
           if (!e.target.closest('.relative')) document.getElementById('menu').classList.add('hidden');
         });
+
+        let editing = false;
+        function toggleDelete() {
+          editing = !editing;
+          document.querySelectorAll('.delete-col').forEach(el => el.classList.toggle('hidden', !editing));
+          document.getElementById('editBtn').textContent = editing ? '✓ تم' : '🗑️ تعديل القراءات';
+          document.getElementById('menu').classList.add('hidden');
+        }
+
+        async function del(id) {
+          if (!confirm('حذف هذه القراءة؟')) return;
+          const res = await fetch('/bp/' + id, { method: 'DELETE' });
+          if (res.ok) {
+            document.getElementById('row-' + id).remove();
+          }
+        }
 
         const data = ${JSON.stringify(chartData)};
         if (data.length) {
@@ -279,15 +293,20 @@ app.post("/bp", async (req, res) => {
   res.json(record);
 });
 
+app.delete("/bp/:id", async (req, res) => {
+  await db.bloodPressure.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+});
+
 cron.schedule("0 9,17,21 * * *", () => {
   sendTelegramMessage(
-    `🩺 <b>تذكير ضغط الدم</b>\n\nوقت تسجيل ضغط الدم!\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>`
+    `🩺 <b>تذكير ضغط الدم</b>\n\nوقت تسجيل ضغط الدم!\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>\n📊 <a href="${process.env.APP_URL}/analytics">التقرير</a>`
   );
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   sendTelegramMessage(
-    `✅ <b>السيرفر شغال</b>\n\nتطبيق ضغط الدم جاهز.\nالتنبيهات: 9 صباحاً، 5 عصراً، 9 مساءً\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>`
+    `✅ <b>السيرفر شغال</b>\n\nتطبيق ضغط الدم جاهز.\nالتنبيهات: 9 صباحاً، 5 عصراً، 9 مساءً\n\n👉 <a href="${process.env.APP_URL}/bp">سجّل الآن</a>\n📊 <a href="${process.env.APP_URL}/analytics">التقرير</a>`
   );
 });
